@@ -129,3 +129,10 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
+CORS_ALLOWED_ORIGINS = [
+    "https://bsguplms.in",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://bsguplms.in",
+]
