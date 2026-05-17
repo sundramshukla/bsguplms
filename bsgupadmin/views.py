@@ -207,42 +207,153 @@ class CreateProfileApi(APIView):
 
 
 
-
 class CourseCreateApi(APIView):
 
-    # CREATE COURSE
-# CREATE COURSE# CREATE COURSE and 
     def post(self, request):
+
+        # =========================
+        # USER ID CHECK
+        # =========================
+
+        user_id = request.data.get("user")
+
+        if not user_id:
+            return Response({
+                "error": "User ID is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # =========================
+        # USER FIND
+        # =========================
+
+        user = UserRegisterModel.objects.filter(
+            id=user_id
+        ).first()
+
+        if not user:
+            return Response({
+                "error": "User not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # =========================
+        # ROLE CHECK
+        # =========================
+
+        if user.role not in ["admin", "superadmin"]:
+
+            return Response({
+                "error": "Permission denied. Only admin can create course"
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # =========================
+        # GET DATA
+        # =========================
 
         title = request.data.get("title", "").strip()
         description = request.data.get("description", "").strip()
         duration = request.data.get("duration", "").strip()
 
-        # duplicate check
-        existing = CourseModel.objects.filter(
+        # =========================
+        # REQUIRED FIELD CHECK
+        # =========================
+
+        if not title:
+            return Response({
+                "error": "Course title is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not description:
+            return Response({
+                "error": "Description is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if not duration:
+            return Response({
+                "error": "Duration is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # =========================
+        # DUPLICATE CHECK
+        # =========================
+
+        existing_course = CourseModel.objects.filter(
             title__iexact=title,
             description__iexact=description,
             duration__iexact=duration
-        )
+        ).exists()
 
-        if existing.exists():
+        if existing_course:
+
             return Response({
                 "error": "Same course already exists"
-            }, status=400)
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = CourseCreateSerializer(data=request.data)
+        # =========================
+        # SERIALIZER
+        # =========================
+
+        serializer = CourseCreateSerializer(
+            data=request.data
+        )
+
+        # =========================
+        # VALIDATION
+        # =========================
 
         if serializer.is_valid():
-            serializer.save()
+
+            serializer.save(user=user)
 
             return Response({
                 "success": "Course created successfully",
                 "data": serializer.data
-            }, status=201)
+            }, status=status.HTTP_201_CREATED)
+
+        # =========================
+        # VALIDATION ERROR
+        # =========================
 
         return Response({
-            "error": serializer.errors
-        }, status=400)
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+# class CourseCreateApi(APIView):
+
+#     # CREATE COURSE
+# # CREATE COURSE# CREATE COURSE and 
+#     def post(self, request):
+
+#         title = request.data.get("title", "").strip()
+#         description = request.data.get("description", "").strip()
+#         duration = request.data.get("duration", "").strip()
+
+#         # duplicate check
+#         existing = CourseModel.objects.filter(
+#             title__iexact=title,
+#             description__iexact=description,
+#             duration__iexact=duration
+#         )
+
+#         if existing.exists():
+#             return Response({
+#                 "error": "Same course already exists"
+#             }, status=400)
+
+#         serializer = CourseCreateSerializer(data=request.data)
+
+#         if serializer.is_valid():
+#             serializer.save()
+
+#             return Response({
+#                 "success": "Course created successfully",
+#                 "data": serializer.data
+#             }, status=201)
+
+#         return Response({
+#             "error": serializer.errors
+#         }, status=400)
 
 
     # LIST ALL COURSES

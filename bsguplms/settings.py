@@ -18,6 +18,7 @@ SECRET_KEY = 'django-insecure-yc7+ws*pq-l^+d=zs_f^nqa$ov_)j_b&*ayp76c_z8^&+ji82h
 DEBUG = True
 
 ALLOWED_HOSTS = [
+    "127.0.0.1",
     "api.bsguplms.in",
     "187.127.169.75",
 ]
@@ -131,8 +132,10 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 CORS_ALLOWED_ORIGINS = [
     "https://bsguplms.in",
+    "https://localhost:5173"
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://bsguplms.in",
+    "https://localhost:5173"
 ]
