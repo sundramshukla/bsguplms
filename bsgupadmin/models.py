@@ -95,3 +95,120 @@ class CourseLesson(models.Model):
     def __str__(self):
         return self.title
     
+
+
+
+
+
+class Quiz(models.Model):
+
+    created_by = models.ForeignKey(
+        UserRegisterModel,
+        on_delete=models.CASCADE
+    )
+
+    course = models.ForeignKey(
+        CourseModel,
+        on_delete=models.CASCADE
+    )
+
+    title = models.CharField(max_length=200)
+
+    total_marks = models.IntegerField(default=100)
+
+    passing_marks = models.IntegerField(default=60)
+
+    # duration in minutes
+    duration = models.IntegerField(default=30)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+
+
+class Question(models.Model):
+
+    quiz = models.ForeignKey(
+        Quiz,
+        on_delete=models.CASCADE
+    )
+
+    question = models.TextField()
+
+    option1 = models.CharField(max_length=200)
+    option2 = models.CharField(max_length=200)
+    option3 = models.CharField(max_length=200)
+    option4 = models.CharField(max_length=200)
+
+    correct_answer = models.CharField(max_length=200)
+
+    def __str__(self):
+        return self.question
+
+
+class QuizAttempt(models.Model):
+
+    user = models.ForeignKey(
+        UserRegisterModel,
+        on_delete=models.CASCADE
+    )
+
+    quiz = models.ForeignKey(
+        Quiz,
+        on_delete=models.CASCADE
+    )
+
+    started_at = models.DateTimeField(auto_now_add=True)
+
+    submitted = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.user.mobile_number} - {self.quiz.title}"
+
+
+class QuizResult(models.Model):
+
+    user = models.ForeignKey(
+        UserRegisterModel,
+        on_delete=models.CASCADE
+    )
+
+    quiz = models.ForeignKey(
+        Quiz,
+        on_delete=models.CASCADE
+    )
+
+    total_questions = models.IntegerField(default=0)
+
+    correct_answers = models.IntegerField(default=0)
+
+    obtained_marks = models.FloatField(default=0)
+
+    percentage = models.FloatField(default=0)
+
+    passed = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.mobile_number} - {self.quiz.title}"
+
+
+class Certificate(models.Model):
+
+    user = models.ForeignKey(
+        UserRegisterModel,
+        on_delete=models.CASCADE
+    )
+
+    course = models.ForeignKey(
+        CourseModel,
+        on_delete=models.CASCADE
+    )
+
+    certificate_file = models.FileField(
+        upload_to='certificates/'
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)

@@ -5,9 +5,19 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from .serializer import CourseCreateSerializer, CourseLessonSerializer, ProfileSerializer
-from .models import CourseLesson, CourseModel, ProfileDetails, UserRegisterModel
+from .models import CourseLesson, CourseModel, ProfileDetails, UserRegisterModel,Quiz,Question,QuizAttempt,QuizResult,Certificate
 from django.core.cache import cache
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.core.mail import EmailMessage
+from django.conf import settings
+from django.utils import timezone
+
+from datetime import timedelta
+
+from reportlab.pdfgen import canvas
+
+import os
+
 
 
 
@@ -514,3 +524,607 @@ class CourseLessonApi(APIView):
             return Response({
                 "error": "Lesson not found"
             }, status=404)
+        
+
+
+
+class CreateQuizAPIView(APIView):
+
+    def post(self, request):
+
+        user_id = request.data.get("user_id")
+
+        title = request.data.get("title")
+
+        course_id = request.data.get("course_id")
+
+        total_marks = request.data.get("total_marks")
+
+        passing_marks = request.data.get("passing_marks")
+
+        duration = request.data.get("duration")
+
+        if not user_id:
+
+            return Response({
+                "success": False,
+                "message": "user_id required"
+            })
+
+        try:
+            user = UserRegisterModel.objects.get(id=user_id)
+
+        except UserRegisterModel.DoesNotExist:
+
+            return Response({
+                "success": False,
+                "message": "Invalid user"
+            })
+
+        # only admin/superadmin
+        if user.role not in ["admin", "superadmin"]:
+
+            return Response({
+                "success": False,
+                "message": "Only admin or superadmin can create quiz"
+            })
+
+        quiz = Quiz.objects.create(
+
+            created_by=user,
+
+            course_id=course_id,
+
+            title=title,
+
+            total_marks=total_marks,
+
+            passing_marks=passing_marks,
+
+            duration=duration
+        )
+
+        return Response({
+
+            "success": True,
+            "message": "Quiz created successfully",
+
+            "data": {
+
+                "quiz_id": quiz.id,
+
+                "title": quiz.title,
+
+                "total_marks": quiz.total_marks,
+
+                "passing_marks": quiz.passing_marks,
+
+                "duration": quiz.duration
+            }
+
+        }, status=status.HTTP_201_CREATED)
+    
+
+
+class CreateQuestionAPIView(APIView):
+
+    def post(self, request):
+
+        user_id = request.data.get("user_id")
+
+        if not user_id:
+
+            return Response({
+                "success": False,
+                "message": "user_id required"
+            })
+
+        try:
+            user = UserRegisterModel.objects.get(id=user_id)
+
+        except UserRegisterModel.DoesNotExist:
+
+            return Response({
+                "success": False,
+                "message": "Invalid user"
+            })
+
+        if user.role not in ["admin", "superadmin"]:
+
+            return Response({
+                "success": False,
+                "message": "Only admin/superadmin can add questions"
+            })
+
+        question = Question.objects.create(
+
+            quiz_id=request.data.get("quiz_id"),
+
+            question=request.data.get("question"),
+
+            option1=request.data.get("option1"),
+
+            option2=request.data.get("option2"),
+
+            option3=request.data.get("option3"),
+
+            option4=request.data.get("option4"),
+
+            correct_answer=request.data.get("correct_answer")
+        )
+
+        return Response({
+
+            "success": True,
+
+            "message": "Question added successfully",
+
+            "data": {
+                "question_id": question.id
+            }
+
+        })
+    
+class GetQuizAPIView(APIView):
+
+    def get(self, request):
+
+        quiz_id = request.GET.get("quiz_id")
+
+        try:
+            quiz = Quiz.objects.get(id=quiz_id)
+
+        except Quiz.DoesNotExist:
+
+            return Response({
+                "success": False,
+                "message": "Quiz not found"
+            })
+
+        questions = Question.objects.filter(quiz=quiz)
+
+        question_data = []
+
+        for q in questions:
+
+            question_data.append({
+
+                "question_id": q.id,
+
+                "question": q.question,
+
+                "option1": q.option1,
+
+                "option2": q.option2,
+
+                "option3": q.option3,
+
+                "option4": q.option4,
+            })
+
+        return Response({
+
+            "success": True,
+
+            "quiz": {
+
+                "quiz_id": quiz.id,
+
+                "title": quiz.title,
+
+                "total_marks": quiz.total_marks,
+
+                "passing_marks": quiz.passing_marks,
+
+                "duration": quiz.duration
+            },
+
+            "questions": question_data
+        })
+    
+
+
+class StartQuizAPIView(APIView):
+
+    def post(self, request):
+
+        user_id = request.data.get("user_id")
+
+        quiz_id = request.data.get("quiz_id")
+
+        if not user_id or not quiz_id:
+
+            return Response({
+                "success": False,
+                "message": "user_id and quiz_id required"
+            })
+
+        try:
+            quiz = Quiz.objects.get(id=quiz_id)
+
+        except Quiz.DoesNotExist:
+
+            return Response({
+                "success": False,
+                "message": "Quiz not found"
+            })
+
+        # already started
+        existing_attempt = QuizAttempt.objects.filter(
+            user_id=user_id,
+            quiz=quiz
+        ).first()
+
+        if existing_attempt:
+
+            return Response({
+                "success": False,
+                "message": "Quiz already started"
+            })
+
+        attempt = QuizAttempt.objects.create(
+
+            user_id=user_id,
+
+            quiz=quiz
+        )
+
+        end_time = (
+            attempt.started_at +
+            timedelta(minutes=quiz.duration)
+        )
+
+        return Response({
+
+            "success": True,
+
+            "message": "Quiz started",
+
+            "data": {
+
+                "quiz_id": quiz.id,
+
+                "title": quiz.title,
+
+                "duration_minutes": quiz.duration,
+
+                "started_at": attempt.started_at,
+
+                "end_time": end_time
+            }
+
+        })
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+from threading import Thread
+
+from django.db.models import F
+
+class SubmitQuizAPIView(APIView):
+
+    def send_certificate_email(
+        self,
+        profile,
+        student_name,
+        pdf_path
+    ):
+
+        try:
+
+            email = EmailMessage(
+
+                subject="Course Completion Certificate",
+
+                body=f"""
+Congratulations {student_name}
+
+You have successfully completed the course.
+
+Certificate attached.
+                """,
+
+                from_email=settings.EMAIL_HOST_USER,
+
+                to=[profile.email]
+            )
+
+            email.attach_file(pdf_path)
+
+            email.send()
+
+        except Exception as e:
+            print("Email Error:", e)
+
+    def post(self, request):
+
+        user_id = request.data.get("user_id")
+        quiz_id = request.data.get("quiz_id")
+        answers = request.data.get("answers")
+
+        if not user_id or not quiz_id or not answers:
+
+            return Response({
+                "success": False,
+                "message": "user_id, quiz_id and answers required"
+            })
+
+        try:
+
+            quiz = Quiz.objects.select_related(
+                'course'
+            ).get(id=quiz_id)
+
+        except Quiz.DoesNotExist:
+
+            return Response({
+                "success": False,
+                "message": "Quiz not found"
+            })
+
+        try:
+
+            attempt = QuizAttempt.objects.get(
+                user_id=user_id,
+                quiz_id=quiz_id
+            )
+
+        except QuizAttempt.DoesNotExist:
+
+            return Response({
+                "success": False,
+                "message": "Please start quiz first"
+            })
+
+        if attempt.submitted:
+
+            return Response({
+                "success": False,
+                "message": "Quiz already submitted"
+            })
+
+        # timing check
+        quiz_end_time = (
+            attempt.started_at +
+            timedelta(minutes=quiz.duration)
+        )
+
+        if timezone.now() > quiz_end_time:
+
+            attempt.submitted = True
+            attempt.save(update_fields=['submitted'])
+
+            return Response({
+                "success": False,
+                "message": "Quiz time is over"
+            })
+
+        # fetch all questions once
+        questions = Question.objects.filter(
+            quiz_id=quiz_id
+        )
+
+        total_questions = questions.count()
+
+        if total_questions == 0:
+
+            return Response({
+                "success": False,
+                "message": "No questions found"
+            })
+
+        # dictionary for O(1) lookup
+        question_map = {
+
+            q.id: q.correct_answer
+            for q in questions
+        }
+
+        correct_answers = 0
+
+        for ans in answers:
+
+            question_id = ans.get("question_id")
+
+            selected_answer = ans.get("answer")
+
+            correct_answer = question_map.get(
+                question_id
+            )
+
+            if correct_answer == selected_answer:
+
+                correct_answers += 1
+
+        # equal marks
+        marks_per_question = (
+            quiz.total_marks / total_questions
+        )
+
+        obtained_marks = (
+            correct_answers *
+            marks_per_question
+        )
+
+        percentage = (
+            obtained_marks / quiz.total_marks
+        ) * 100
+
+        passed = (
+            percentage >= quiz.passing_marks
+        )
+
+        # save result
+        QuizResult.objects.create(
+
+            user_id=user_id,
+
+            quiz_id=quiz_id,
+
+            total_questions=total_questions,
+
+            correct_answers=correct_answers,
+
+            obtained_marks=obtained_marks,
+
+            percentage=percentage,
+
+            passed=passed
+        )
+
+        attempt.submitted = True
+
+        attempt.save(update_fields=['submitted'])
+
+        # FAST RESPONSE FIRST
+        response_data = {
+
+            "success": True,
+
+            "message": "Quiz submitted successfully",
+
+            "data": {
+
+                "total_questions": total_questions,
+
+                "correct_answers": correct_answers,
+
+                "obtained_marks": obtained_marks,
+
+                "total_marks": quiz.total_marks,
+
+                "percentage": percentage,
+
+                "passed": passed
+            }
+        }
+
+        # background certificate generation
+        if passed:
+
+            try:
+
+                profile = ProfileDetails.objects.only(
+                    'full_name',
+                    'email'
+                ).filter(
+                    user_id=user_id
+                ).first()
+
+                student_name = (
+                    profile.full_name
+                    if profile else "Student"
+                )
+
+                course = quiz.course
+
+                certificate_dir = os.path.join(
+                    settings.MEDIA_ROOT,
+                    "certificates"
+                )
+
+                os.makedirs(
+                    certificate_dir,
+                    exist_ok=True
+                )
+
+                pdf_name = (
+                    f"certificate_{user_id}_{course.id}.pdf"
+                )
+
+                pdf_path = os.path.join(
+                    certificate_dir,
+                    pdf_name
+                )
+
+                # generate pdf
+                c = canvas.Canvas(pdf_path)
+
+                c.setFont(
+                    "Helvetica-Bold",
+                    28
+                )
+
+                c.drawString(
+                    180,
+                    750,
+                    "CERTIFICATE"
+                )
+
+                c.setFont(
+                    "Helvetica",
+                    18
+                )
+
+                c.drawString(
+                    80,
+                    680,
+                    "This certificate is awarded to"
+                )
+
+                c.setFont(
+                    "Helvetica-Bold",
+                    22
+                )
+
+                c.drawString(
+                    80,
+                    640,
+                    student_name
+                )
+
+                c.drawString(
+                    80,
+                    580,
+                    course.title
+                )
+
+                c.drawString(
+                    80,
+                    520,
+                    f"Score: {percentage}%"
+                )
+
+                c.save()
+
+                Certificate.objects.create(
+
+                    user_id=user_id,
+
+                    course_id=course.id,
+
+                    certificate_file=f"certificates/{pdf_name}"
+                )
+
+                # send email in thread
+                if profile and profile.email:
+
+                    Thread(
+                        target=self.send_certificate_email,
+                        args=(
+                            profile,
+                            student_name,
+                            pdf_path
+                        )
+                    ).start()
+
+            except Exception as e:
+
+                print("Certificate Error:", e)
+
+        return Response(
+            response_data,
+            status=status.HTTP_200_OK
+        )

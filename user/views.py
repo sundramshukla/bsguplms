@@ -322,15 +322,15 @@ class DirectEnrollApi(APIView):
 
 
 
-
 class GetEnrollCourses(APIView):
 
- def get(self, request):
+    def get(self, request):
+
         user_id = request.GET.get('user_id')
 
         if not user_id:
             return Response({
-                "status": False,
+                "success": False,
                 "message": "user_id is required"
             }, status=status.HTTP_400_BAD_REQUEST)
 
@@ -338,33 +338,32 @@ class GetEnrollCourses(APIView):
 
         if not enrollments.exists():
             return Response({
-  
-                "success": "No enrolled courses found"
+                "success": False,
+                "message": "No enrolled courses found"
             }, status=status.HTTP_404_NOT_FOUND)
 
         data = []
 
         for enroll in enrollments:
+
             course = enroll.course
-            user = enroll.user
 
             data.append({
+
                 "enrollment_id": enroll.id,
                 "enrolled_at": enroll.enrolled_at,
 
-                "user": {
-                    "id": user.id,
-                    "name": getattr(user, 'name', ''),
-                    "email": getattr(user, 'email', ''),
-                    "phone": getattr(user, 'phone', ''),
-                },
-
                 "course": {
                     "id": course.id,
-                    "title": getattr(course, 'title', ''),
-                    "description": getattr(course, 'description', ''),
-                    "price": getattr(course, 'price', ''),
-                    "image": request.build_absolute_uri(course.image.url) if getattr(course, 'image', None) else None,
+                    "title": course.title,
+                    "description": course.description,
+                    "price": str(course.price),
+                    "duration": course.duration,
+                    "department": course.department,
+                    "created_at": course.created_at,
+                    "course_profile_pic": request.build_absolute_uri(
+                        course.course_profile_pic.url
+                    ) if course.course_profile_pic else None
                 }
             })
 

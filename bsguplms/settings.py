@@ -132,10 +132,27 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 CORS_ALLOWED_ORIGINS = [
     "https://bsguplms.in",
-    "https://localhost:5173"
+    "http://localhost:5173"
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://bsguplms.in",
-    "https://localhost:5173"
+    "http://localhost:5173"
 ]
+
+
+
+
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
+EMAIL_HOST = 'smtp.gmail.com'
+
+EMAIL_PORT = 587
+
+EMAIL_HOST_USER = 'developersundram700@gmail.com'
+
+EMAIL_HOST_PASSWORD = 'igzl macn zuzg yxiy'
+
+EMAIL_USE_TLS = True
+

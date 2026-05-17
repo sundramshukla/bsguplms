@@ -6,5 +6,10 @@ urlpatterns = [
     path('login/', LoginApi.as_view(), name='login-api'),
     path('profile/', CreateProfileApi.as_view(), name='profile'),
     path("createcourse/", CourseCreateApi.as_view()),
-    path("create-lesson/", CourseLessonApi.as_view())
+    path("create-lesson/", CourseLessonApi.as_view()),
+    path('create-quiz/',CreateQuizAPIView.as_view()),
+    path('create-question/',CreateQuestionAPIView.as_view()),
+    path('get-quiz/',GetQuizAPIView.as_view()),
+    path('start-quiz/',StartQuizAPIView.as_view()),
+    path('submit-quiz/',SubmitQuizAPIView.as_view()),
 ]
