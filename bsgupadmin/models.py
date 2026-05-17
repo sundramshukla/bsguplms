@@ -3,7 +3,6 @@ from django.db import models
 
 class UserRegisterModel(models.Model):
     mobile_number = models.CharField(max_length=15, unique=True)
-    password = models.CharField(max_length=100)
     ROLE_CHOICES = (
         ("student", "student"),
         ("admin", "Admin"),
