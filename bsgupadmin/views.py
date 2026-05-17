@@ -211,7 +211,7 @@ class CreateProfileApi(APIView):
 class CourseCreateApi(APIView):
 
     # CREATE COURSE
-# CREATE COURSE# CREATE COURSE
+# CREATE COURSE# CREATE COURSE and 
     def post(self, request):
 
         title = request.data.get("title", "").strip()
