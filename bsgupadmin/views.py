@@ -4,6 +4,8 @@ from rest_framework.views import APIView
 from rest_framework import status
 from rest_framework.response import Response
 
+from user.models import Enrollment
+
 from .serializer import CourseCreateSerializer, CourseLessonSerializer, ProfileSerializer
 from .models import CourseLesson, CourseModel, ProfileDetails, UserRegisterModel,Quiz,Question,QuizAttempt,QuizResult,Certificate
 from django.core.cache import cache
@@ -72,11 +74,33 @@ class LoginApi(APIView):
             return Response({"error": "Mobile number is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            user = UserRegisterModel.objects.get(mobile_number=mobile_number)
+            user = UserRegisterModel.objects.get(
+                mobile_number=mobile_number
+            )
+
         except UserRegisterModel.DoesNotExist:
-            return Response({"error": "Mobile number not registered"}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response(
+                {
+                    "error": "Mobile number not registered"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+        if not user.is_active_student:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Your account has been suspended by admin"
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
 
         # Generate OTP (6-digit)
+
         otp = random.randint(100000, 999999)
 
         # Store OTP in cache (valid for 5 minutes)
@@ -953,10 +977,11 @@ class StartQuizAPIView(APIView):
     
 from threading import Thread
 
-from django.db.models import F
+from django.db.models import F, Count
 
 class SubmitQuizAPIView(APIView):
 
+    # background email sender
     def send_certificate_email(
         self,
         profile,
@@ -988,21 +1013,29 @@ Certificate attached.
             email.send()
 
         except Exception as e:
+
             print("Email Error:", e)
 
     def post(self, request):
 
         user_id = request.data.get("user_id")
+
         quiz_id = request.data.get("quiz_id")
+
         answers = request.data.get("answers")
 
+        # validation
         if not user_id or not quiz_id or not answers:
 
             return Response({
-                "success": False,
-                "message": "user_id, quiz_id and answers required"
-            })
 
+                "success": False,
+
+                "message": "user_id, quiz_id and answers required"
+
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # quiz fetch
         try:
 
             quiz = Quiz.objects.select_related(
@@ -1012,48 +1045,67 @@ Certificate attached.
         except Quiz.DoesNotExist:
 
             return Response({
-                "success": False,
-                "message": "Quiz not found"
-            })
 
+                "success": False,
+
+                "message": "Quiz not found"
+
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # attempt check
         try:
 
             attempt = QuizAttempt.objects.get(
+
                 user_id=user_id,
+
                 quiz_id=quiz_id
             )
 
         except QuizAttempt.DoesNotExist:
 
             return Response({
-                "success": False,
-                "message": "Please start quiz first"
-            })
 
+                "success": False,
+
+                "message": "Please start quiz first"
+
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # already submitted
         if attempt.submitted:
 
             return Response({
+
                 "success": False,
+
                 "message": "Quiz already submitted"
-            })
+
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         # timing check
         quiz_end_time = (
+
             attempt.started_at +
+
             timedelta(minutes=quiz.duration)
         )
 
         if timezone.now() > quiz_end_time:
 
             attempt.submitted = True
+
             attempt.save(update_fields=['submitted'])
 
             return Response({
-                "success": False,
-                "message": "Quiz time is over"
-            })
 
-        # fetch all questions once
+                "success": False,
+
+                "message": "Quiz time is over"
+
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # fetch questions
         questions = Question.objects.filter(
             quiz_id=quiz_id
         )
@@ -1063,11 +1115,14 @@ Certificate attached.
         if total_questions == 0:
 
             return Response({
-                "success": False,
-                "message": "No questions found"
-            })
 
-        # dictionary for O(1) lookup
+                "success": False,
+
+                "message": "No questions found"
+
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # fast lookup dictionary
         question_map = {
 
             q.id: q.correct_answer
@@ -1076,6 +1131,7 @@ Certificate attached.
 
         correct_answers = 0
 
+        # answer checking
         for ans in answers:
 
             question_id = ans.get("question_id")
@@ -1090,21 +1146,25 @@ Certificate attached.
 
                 correct_answers += 1
 
-        # equal marks
+        # marks calculation
         marks_per_question = (
+
             quiz.total_marks / total_questions
         )
 
         obtained_marks = (
+
             correct_answers *
             marks_per_question
         )
 
         percentage = (
+
             obtained_marks / quiz.total_marks
         ) * 100
 
         passed = (
+
             percentage >= quiz.passing_marks
         )
 
@@ -1126,11 +1186,12 @@ Certificate attached.
             passed=passed
         )
 
+        # update attempt
         attempt.submitted = True
 
         attempt.save(update_fields=['submitted'])
 
-        # FAST RESPONSE FIRST
+        # default response
         response_data = {
 
             "success": True,
@@ -1149,45 +1210,59 @@ Certificate attached.
 
                 "percentage": percentage,
 
-                "passed": passed
+                "passed": passed,
+
+                "certificate": None
             }
         }
 
-        # background certificate generation
+        # certificate generation
         if passed:
 
             try:
 
                 profile = ProfileDetails.objects.only(
+
                     'full_name',
                     'email'
+
                 ).filter(
                     user_id=user_id
                 ).first()
 
                 student_name = (
+
                     profile.full_name
                     if profile else "Student"
                 )
 
                 course = quiz.course
 
+                # create certificate folder
                 certificate_dir = os.path.join(
+
                     settings.MEDIA_ROOT,
+
                     "certificates"
                 )
 
                 os.makedirs(
+
                     certificate_dir,
+
                     exist_ok=True
                 )
 
+                # pdf name
                 pdf_name = (
+
                     f"certificate_{user_id}_{course.id}.pdf"
                 )
 
                 pdf_path = os.path.join(
+
                     certificate_dir,
+
                     pdf_name
                 )
 
@@ -1196,7 +1271,7 @@ Certificate attached.
 
                 c.setFont(
                     "Helvetica-Bold",
-                    28
+                    30
                 )
 
                 c.drawString(
@@ -1218,7 +1293,7 @@ Certificate attached.
 
                 c.setFont(
                     "Helvetica-Bold",
-                    22
+                    24
                 )
 
                 c.drawString(
@@ -1227,21 +1302,33 @@ Certificate attached.
                     student_name
                 )
 
+                c.setFont(
+                    "Helvetica",
+                    18
+                )
+
                 c.drawString(
                     80,
                     580,
+                    "For successfully completing"
+                )
+
+                c.drawString(
+                    80,
+                    540,
                     course.title
                 )
 
                 c.drawString(
                     80,
-                    520,
-                    f"Score: {percentage}%"
+                    480,
+                    f"Score : {percentage}%"
                 )
 
                 c.save()
 
-                Certificate.objects.create(
+                # save certificate
+                certificate = Certificate.objects.create(
 
                     user_id=user_id,
 
@@ -1250,16 +1337,29 @@ Certificate attached.
                     certificate_file=f"certificates/{pdf_name}"
                 )
 
-                # send email in thread
+                # certificate url
+                certificate_url = request.build_absolute_uri(
+                    certificate.certificate_file.url
+                )
+
+                # add certificate url in response
+                response_data["data"]["certificate"] = (
+                    certificate_url
+                )
+
+                # send email in background
                 if profile and profile.email:
 
                     Thread(
+
                         target=self.send_certificate_email,
+
                         args=(
                             profile,
                             student_name,
                             pdf_path
                         )
+
                     ).start()
 
             except Exception as e:
@@ -1267,6 +1367,264 @@ Certificate attached.
                 print("Certificate Error:", e)
 
         return Response(
+
             response_data,
+
             status=status.HTTP_200_OK
+        )
+
+
+
+# ================================
+# DASHBOARD SUMMARY API
+# ================================
+
+class AdminDashboardAPIView(APIView):
+
+    def get(self, request):
+
+        user_id = request.GET.get("user_id")
+
+        if not user_id:
+            return Response(
+                {
+                    "success": False,
+                    "message": "user_id is required"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            admin_user = UserRegisterModel.objects.get(id=user_id)
+
+        except UserRegisterModel.DoesNotExist:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Admin not found"
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if admin_user.role not in ["admin", "superadmin"]:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Unauthorized access"
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        total_students = UserRegisterModel.objects.filter(
+            role="student"
+        ).count()
+
+        enrolled_students = Enrollment.objects.values(
+            "user"
+        ).distinct().count()
+
+        total_courses = CourseModel.objects.count()
+
+        total_lessons = CourseLesson.objects.count()
+
+        completion_rate = (
+            round((enrolled_students / total_students) * 100, 2)
+            if total_students > 0 else 0
+        )
+
+        total_revenue = 0
+
+        return Response(
+            {
+                "success": True,
+                "data": {
+                    "registered_students": total_students,
+                    "enrolled_students": enrolled_students,
+                    "total_courses": total_courses,
+                    "total_lessons": total_lessons,
+                    "completion_rate": completion_rate,
+                    "total_revenue": total_revenue
+                }
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+# ================================
+# ENROLLMENT BY DEPARTMENT API
+# ================================
+
+class EnrollmentByDepartmentAPIView(APIView):
+
+    def get(self, request):
+
+        user_id = request.GET.get("user_id")
+
+        if not user_id:
+            return Response(
+                {
+                    "success": False,
+                    "message": "user_id is required"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            admin_user = UserRegisterModel.objects.get(id=user_id)
+
+        except UserRegisterModel.DoesNotExist:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Admin not found"
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        if admin_user.role not in ["admin", "superadmin"]:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Unauthorized access"
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        department_data = (
+            Enrollment.objects
+            .values("course__department")
+            .annotate(total_students=Count("id"))
+        )
+
+        data = []
+
+        for item in department_data:
+
+            data.append({
+                "department": item["course__department"],
+                "total_students": item["total_students"]
+            })
+
+        return Response(
+            {
+                "success": True,
+                "data": data
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+# ================================
+# RECENT ENROLLMENTS API
+# ================================
+class RecentEnrollmentsAPIView(APIView):
+
+    def get(self, request):
+
+        user_id = request.GET.get("user_id")
+
+        if not user_id:
+            return Response(
+                {
+                    "success": False,
+                    "message": "user_id is required"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        admin_exists = UserRegisterModel.objects.filter(
+            id=user_id,
+            role__in=["admin", "superadmin"]
+        ).exists()
+
+        if not admin_exists:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Unauthorized access"
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        recent_enrollments = (
+            Enrollment.objects
+            .select_related("user", "course")
+            .prefetch_related("user__profile")
+            .order_by("-enrolled_at")[:10]
+        )
+
+        data = [
+            {
+                "student_id": enrollment.user.id,
+                "student_name": (
+                    enrollment.user.profile.first().full_name
+                    if enrollment.user.profile.exists()
+                    else None
+                ),
+                "mobile_number": enrollment.user.mobile_number,
+                "course_name": enrollment.course.title,
+                "enrollment_date": enrollment.enrolled_at.date(),
+                "status": "Active"
+            }
+            for enrollment in recent_enrollments
+        ]
+
+        return Response(
+            {
+                "success": True,
+                "data": data
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ToggleStudentStatusAPIView(APIView):
+
+    def post(self, request):
+
+        user_id = request.data.get("user_id")
+        student_id = request.data.get("student_id")
+
+        admin_exists = UserRegisterModel.objects.filter(
+            id=user_id,
+            role__in=["admin", "superadmin"]
+        ).exists()
+
+        if not admin_exists:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Unauthorized"
+                },
+                status=403
+            )
+
+        try:
+            student = UserRegisterModel.objects.get(
+                id=student_id,
+                role="student"
+            )
+
+        except UserRegisterModel.DoesNotExist:
+            return Response(
+                {
+                    "success": False,
+                    "message": "Student not found"
+                },
+                status=404
+            )
+
+        student.is_active_student = not student.is_active_student
+        student.save()
+
+        return Response(
+            {
+                "success": True,
+                "is_active_student": student.is_active_student
+            }
         )

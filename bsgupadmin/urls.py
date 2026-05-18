@@ -12,4 +12,8 @@ urlpatterns = [
     path('get-quiz/',GetQuizAPIView.as_view()),
     path('start-quiz/',StartQuizAPIView.as_view()),
     path('submit-quiz/',SubmitQuizAPIView.as_view()),
+    path('dashboard/', AdminDashboardAPIView.as_view()),
+    path('enrollment-by-department/', EnrollmentByDepartmentAPIView.as_view()),
+    path('recentenrollment/',RecentEnrollmentsAPIView.as_view()),
+    path('student-status-cahnge/', ToggleStudentStatusAPIView.as_view())
 ]
