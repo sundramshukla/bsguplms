@@ -156,3 +156,13 @@ EMAIL_HOST_PASSWORD = 'igzl macn zuzg yxiy'
 
 EMAIL_USE_TLS = True
 
+
+
+REST_FRAMEWORK = {
+
+    'DEFAULT_RENDERER_CLASSES': (
+
+        'rest_framework.renderers.JSONRenderer',
+
+    ),
+}
