@@ -606,64 +606,206 @@ class CreateQuizAPIView(APIView):
     
 
 
+
+
+
+
 class CreateQuestionAPIView(APIView):
 
     def post(self, request):
 
-        user_id = request.data.get("user_id")
+        data = request.data
 
-        if not user_id:
+        user_id = data.get("user_id")
+        quiz_id = data.get("quiz_id")
+
+        # fast required check
+        required_fields = [
+
+            "question",
+
+            "option1",
+            "option2",
+            "option3",
+            "option4",
+
+            "correct_answer"
+        ]
+
+        for field in required_fields:
+
+            if not data.get(field):
+
+                return Response({
+
+                    "success": False,
+
+                    "message": f"{field} is required"
+
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        # fast role check
+        user = UserRegisterModel.objects.filter(
+            id=user_id
+        ).only(
+            'id',
+            'role'
+        ).first()
+
+        if not user:
 
             return Response({
+
                 "success": False,
-                "message": "user_id required"
-            })
 
-        try:
-            user = UserRegisterModel.objects.get(id=user_id)
-
-        except UserRegisterModel.DoesNotExist:
-
-            return Response({
-                "success": False,
                 "message": "Invalid user"
-            })
 
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # permission check
         if user.role not in ["admin", "superadmin"]:
 
             return Response({
-                "success": False,
-                "message": "Only admin/superadmin can add questions"
-            })
 
+                "success": False,
+
+                "message": "Permission denied"
+
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # fast quiz check
+        quiz = Quiz.objects.filter(
+            id=quiz_id
+        ).only('id').first()
+
+        if not quiz:
+
+            return Response({
+
+                "success": False,
+
+                "message": "Quiz not found"
+
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # fast correct answer validation
+        options = {
+
+            data.get("option1"),
+
+            data.get("option2"),
+
+            data.get("option3"),
+
+            data.get("option4")
+        }
+
+        if data.get("correct_answer") not in options:
+
+            return Response({
+
+                "success": False,
+
+                "message": "Correct answer must match options"
+
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # create question
         question = Question.objects.create(
 
-            quiz_id=request.data.get("quiz_id"),
+            quiz_id=quiz.id,
 
-            question=request.data.get("question"),
+            question=data.get("question"),
 
-            option1=request.data.get("option1"),
+            option1=data.get("option1"),
 
-            option2=request.data.get("option2"),
+            option2=data.get("option2"),
 
-            option3=request.data.get("option3"),
+            option3=data.get("option3"),
 
-            option4=request.data.get("option4"),
+            option4=data.get("option4"),
 
-            correct_answer=request.data.get("correct_answer")
+            correct_answer=data.get("correct_answer")
         )
 
+        # ultra fast response
         return Response({
 
             "success": True,
 
             "message": "Question added successfully",
 
-            "data": {
-                "question_id": question.id
-            }
+            "question_id": question.id
 
-        })
+        }, status=status.HTTP_201_CREATED)
+
+
+
+
+
+
+
+
+
+
+# class CreateQuestionAPIView(APIView):
+
+#     def post(self, request):
+
+#         user_id = request.data.get("user_id")
+
+#         if not user_id:
+
+#             return Response({
+#                 "success": False,
+#                 "message": "user_id required"
+#             })
+
+#         try:
+#             user = UserRegisterModel.objects.get(id=user_id)
+
+#         except UserRegisterModel.DoesNotExist:
+
+#             return Response({
+#                 "success": False,
+#                 "message": "Invalid user"
+#             })
+
+#         if user.role not in ["admin", "superadmin"]:
+
+#             return Response({
+#                 "success": False,
+#                 "message": "Only admin/superadmin can add questions"
+#             })
+
+#         question = Question.objects.create(
+
+#             quiz_id=request.data.get("quiz_id"),
+
+#             question=request.data.get("question"),
+
+#             option1=request.data.get("option1"),
+
+#             option2=request.data.get("option2"),
+
+#             option3=request.data.get("option3"),
+
+#             option4=request.data.get("option4"),
+
+#             correct_answer=request.data.get("correct_answer")
+#         )
+
+#         return Response({
+
+#             "success": True,
+
+#             "message": "Question added successfully",
+
+#             "data": {
+#                 "question_id": question.id
+#             }
+
+#         })
     
 class GetQuizAPIView(APIView):
 
