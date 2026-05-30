@@ -2,19 +2,48 @@ from django.db import models
 
 
 class UserRegisterModel(models.Model):
-    mobile_number = models.CharField(max_length=15, unique=True)
+
+    email = models.EmailField(
+        unique=True,
+        null=True,
+        blank=True
+    )
+
+    password = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
+
+    mobile_number = models.CharField(
+        max_length=15,
+        unique=True,
+        null=True,
+        blank=True
+    )
+
     ROLE_CHOICES = (
         ("student", "student"),
         ("admin", "Admin"),
         ("superadmin", "Super Admin")
     )
 
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="student")
-    created_at = models.DateTimeField(auto_now_add=True)
-    is_active_student = models.BooleanField(default=True)
+    role = models.CharField(
+        max_length=20,
+        choices=ROLE_CHOICES,
+        default="student"
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True
+    )
+
+    is_active_student = models.BooleanField(
+        default=True
+    )
 
     def __str__(self):
-        return self.mobile_number
+        return self.email or self.mobile_number or str(self.id)
     
 
 class ProfileDetails(models.Model):

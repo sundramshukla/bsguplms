@@ -1,3 +1,4 @@
+import json
 import random
 from django.shortcuts import render
 from rest_framework.views import APIView
@@ -22,130 +23,558 @@ from reportlab.pdfgen import canvas
 import os
 
 
+#=============register and login through email=====================
+from .utils import (generate_otp,send_otp_email,hash_password, verify_password
+)
 
 
-# Create your views here.
-class RegisterApi(APIView):
+class RegisterThroughEmailAPIView(APIView):
+
     def get(self, request):
-        mobile_number = request.query_params.get('mobile_number')
-        role=request.query_params.get('role')
 
-        if not mobile_number or not role:
-            return Response({"error": "Mobile number and role are required"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if UserRegisterModel.objects.filter(mobile_number=mobile_number).exists():
-            return Response({"error": "Mobile number already exists"}, status=status.HTTP_400_BAD_REQUEST)
-        otp = random.randint(100000, 999999)
-        cache.set(f"otp_{mobile_number}", otp, timeout=300)  # OTP valid for 5 minutes
-        return Response({"message": "OTP sent successfully", "otp": otp}, status=status.HTTP_200_OK)
-
-    def post(self, request):
-        mobile_number = request.data.get('mobile_number')
-        role=request.data.get('role')
-        otp = request.data.get('otp')
-
-        if not mobile_number or not otp or not role:
-            return Response({"error": "Mobile number and OTP and role are required"}, status=status.HTTP_400_BAD_REQUEST)
-
-        cached_otp = cache.get(f"otp_{mobile_number}")
-        if not cached_otp or str(cached_otp) != str(otp):
-            return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
-
-        if UserRegisterModel.objects.filter(mobile_number=mobile_number).exists():
-            return Response({"error": "Mobile number already registered"}, status=status.HTTP_400_BAD_REQUEST)
-
-
-        UserRegisterModel.objects.create(
-            mobile_number=mobile_number,
-            role=role
+        email = (
+            request.query_params
+            .get("email", "")
+            .strip()
+            .lower()
         )
 
-        # Clear cache after successful registration
-        cache.delete(f"otp_{mobile_number}")
+        password = request.query_params.get(
+            "password"
+        )
 
-        return Response({"message": "User Registered Successfully"}, status=status.HTTP_201_CREATED)
+        role = request.query_params.get(
+            "role"
+        )
 
+        if not email or not password or not role:
 
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "email, password and role "
+                        "are required"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-class LoginApi(APIView):
-    def get(self, request):
-        mobile_number = request.query_params.get('mobile_number')
+        if role not in [
+            "student",
+            "admin",
+            "superadmin"
+        ]:
 
-        if not mobile_number:
-            return Response({"error": "Mobile number is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {
+                    "success": False,
+                    "message": "Invalid role"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if UserRegisterModel.objects.filter(
+            email=email
+        ).exists():
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Email already registered"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        otp = generate_otp()
+
+        cache.set(
+            f"register_otp_{email}",
+            otp,
+            timeout=300
+        )
+
+        cache.set(
+            f"register_data_{email}",
+            json.dumps(
+                {
+                    "email": email,
+                    "password": password,
+                    "role": role
+                }
+            ),
+            timeout=300
+        )
+
+        Thread(
+            target=send_otp_email,
+            kwargs={
+                "email": email,
+                "otp": otp,
+                "subject": "Registration OTP"
+            }
+        ).start()
+
+        return Response(
+            {
+                "success": True,
+                "message": "OTP sent successfully"
+            },
+            status=status.HTTP_200_OK
+        )
+
+    def post(self, request):
+
+        email = (
+            request.data.get(
+                "email",
+                ""
+            )
+            .strip()
+            .lower()
+        )
+
+        otp = request.data.get("otp")
+
+        if not email or not otp:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "email and otp are required"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        stored_otp = cache.get(
+            f"register_otp_{email}"
+        )
+
+        if not stored_otp:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "OTP expired"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if str(stored_otp) != str(otp):
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Invalid OTP"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user_data = cache.get(
+            f"register_data_{email}"
+        )
+
+        if not user_data:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "Registration session expired"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user_data = json.loads(
+            user_data
+        )
+
+        if UserRegisterModel.objects.filter(
+            email=email
+        ).exists():
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "Email already registered"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user = UserRegisterModel.objects.create(
+
+            email=user_data["email"],
+
+            password=hash_password(
+                user_data["password"]
+            ),
+
+            role=user_data["role"]
+        )
+
+        cache.delete(
+            f"register_otp_{email}"
+        )
+
+        cache.delete(
+            f"register_data_{email}"
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": (
+                    "User registered successfully"
+                ),
+                "data": {
+
+                    "user_id": user.id,
+
+                    "email": user.email,
+
+                    "role": user.role
+                }
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+    def post(self, request):
+
+        email = request.data.get("email")
+        otp = request.data.get("otp")
+
+        if not email or not otp:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "email and otp are required"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        stored_otp = cache.get(
+            f"register_otp_{email}"
+        )
+
+        if not stored_otp:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "OTP expired"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if str(stored_otp) != str(otp):
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Invalid OTP"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user_data = cache.get(
+            f"register_data_{email}"
+        )
+
+        if not user_data:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "Registration session expired"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user_data = json.loads(
+            user_data
+        )
+
+        user = UserRegisterModel.objects.create(
+
+            email=user_data["email"],
+
+            password=hash_password(
+                user_data["password"]
+                 ),
+
+            role=user_data["role"]
+        )
+
+        cache.delete(
+            f"register_otp_{email}"
+        )
+
+        cache.delete(
+            f"register_data_{email}"
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": (
+                    "User registered successfully"
+                ),
+                "data": {
+
+                    "user_id": user.id,
+
+                    "email": user.email,
+
+                    "role": user.role
+                }
+            },
+            status=status.HTTP_201_CREATED
+        )
+    
+
+class LoginThroughEmailAPIView(APIView):
+
+    def post(self, request):
+
+        email = (
+            request.data.get(
+                "email",
+                ""
+            )
+            .strip()
+            .lower()
+        )
+
+        password = request.data.get(
+            "password"
+        )
+
+        if not email or not password:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "email and password "
+                        "are required"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
+
             user = UserRegisterModel.objects.get(
-                mobile_number=mobile_number
+                email=email
             )
 
         except UserRegisterModel.DoesNotExist:
 
             return Response(
                 {
-                    "error": "Mobile number not registered"
+                    "success": False,
+                    "message": "Invalid email"
                 },
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_404_NOT_FOUND
             )
-
 
         if not user.is_active_student:
 
             return Response(
                 {
                     "success": False,
-                    "message": "Your account has been suspended by admin"
+                    "message": (
+                        "Account suspended"
+                    )
                 },
                 status=status.HTTP_403_FORBIDDEN
             )
 
+        if not verify_password(
+            password,
+            user.password
+        ):
 
-        # Generate OTP (6-digit)
+            return Response(
+                {
+                    "success": False,
+                    "message": "Invalid password"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        otp = random.randint(100000, 999999)
+        refresh = RefreshToken.for_user(
+            user
+        )
 
-        # Store OTP in cache (valid for 5 minutes)
-        cache.set(f"otp_{mobile_number}", otp, timeout=300)
+        refresh["user_id"] = user.id
 
-        return Response({"message": "OTP sent successfully", "otp": otp}, status=status.HTTP_200_OK)
+        refresh["role"] = user.role
 
-    def post(self, request):
-        mobile_number = request.data.get('mobile_number')
-        otp = request.data.get('otp')
+        refresh["email"] = user.email
 
-        if not mobile_number:
-            return Response({"error": "Mobile number is required"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "success": True,
+                "message": (
+                    "Login successful"
+                ),
 
-        try:
-            super_admin = UserRegisterModel.objects.get(mobile_number=mobile_number)
-        except UserRegisterModel.DoesNotExist:
-            return Response({"error": "Invalid mobile number"}, status=status.HTTP_400_BAD_REQUEST)
+                "data": {
 
-        def generate_tokens(user):
-            refresh = RefreshToken()
-            refresh['mobile_number'] = user.mobile_number
-            refresh['user_type'] = user.role
-            refresh['user_id'] = user.id
+                    "user_id": user.id,
 
-            access = refresh.access_token
-            return {
-                'refresh': str(refresh),
-                'access': str(access)
-            }
+                    "email": user.email,
+
+                    "role": user.role,
+
+                    "tokens": {
+
+                        "refresh": str(
+                            refresh
+                        ),
+
+                        "access": str(
+                            refresh.access_token
+                        )
+                    }
+                }
+            },
+            status=status.HTTP_200_OK
+        )
+
+# # Create your views here.
+# class RegisterApi(APIView):
+#     def get(self, request):
+#         mobile_number = request.query_params.get('mobile_number')
+#         role=request.query_params.get('role')
+
+#         if not mobile_number or not role:
+#             return Response({"error": "Mobile number and role are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         if UserRegisterModel.objects.filter(mobile_number=mobile_number).exists():
+#             return Response({"error": "Mobile number already exists"}, status=status.HTTP_400_BAD_REQUEST)
+#         otp = random.randint(100000, 999999)
+#         cache.set(f"otp_{mobile_number}", otp, timeout=300)  # OTP valid for 5 minutes
+#         return Response({"message": "OTP sent successfully", "otp": otp}, status=status.HTTP_200_OK)
+
+#     def post(self, request):
+#         mobile_number = request.data.get('mobile_number')
+#         role=request.data.get('role')
+#         otp = request.data.get('otp')
+
+#         if not mobile_number or not otp or not role:
+#             return Response({"error": "Mobile number and OTP and role are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         cached_otp = cache.get(f"otp_{mobile_number}")
+#         if not cached_otp or str(cached_otp) != str(otp):
+#             return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         if UserRegisterModel.objects.filter(mobile_number=mobile_number).exists():
+#             return Response({"error": "Mobile number already registered"}, status=status.HTTP_400_BAD_REQUEST)
 
 
-        # ✅ OTP Login
-        if otp:
-            otp_stored = cache.get(f"otp_{mobile_number}")
-            if otp_stored and int(otp) == otp_stored:
-                cache.delete(f"otp_{mobile_number}")
-                tokens = generate_tokens(super_admin)
-                return Response({
-                    "message": "Login successful via OTP",
-                    "tokens": tokens
-                }, status=status.HTTP_200_OK)
-            return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"error": "Either OTP or password is required"}, status=status.HTTP_400_BAD_REQUEST) 
+#         UserRegisterModel.objects.create(
+#             mobile_number=mobile_number,
+#             role=role
+#         )
+
+#         # Clear cache after successful registration
+#         cache.delete(f"otp_{mobile_number}")
+
+#         return Response({"message": "User Registered Successfully"}, status=status.HTTP_201_CREATED)
+
+
+
+# class LoginApi(APIView):
+#     def get(self, request):
+#         mobile_number = request.query_params.get('mobile_number')
+
+#         if not mobile_number:
+#             return Response({"error": "Mobile number is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         try:
+#             user = UserRegisterModel.objects.get(
+#                 mobile_number=mobile_number
+#             )
+
+#         except UserRegisterModel.DoesNotExist:
+
+#             return Response(
+#                 {
+#                     "error": "Mobile number not registered"
+#                 },
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+
+#         if not user.is_active_student:
+
+#             return Response(
+#                 {
+#                     "success": False,
+#                     "message": "Your account has been suspended by admin"
+#                 },
+#                 status=status.HTTP_403_FORBIDDEN
+#             )
+
+
+#         # Generate OTP (6-digit)
+
+#         otp = random.randint(100000, 999999)
+
+#         # Store OTP in cache (valid for 5 minutes)
+#         cache.set(f"otp_{mobile_number}", otp, timeout=300)
+
+#         return Response({"message": "OTP sent successfully", "otp": otp}, status=status.HTTP_200_OK)
+
+#     def post(self, request):
+#         mobile_number = request.data.get('mobile_number')
+#         otp = request.data.get('otp')
+
+#         if not mobile_number:
+#             return Response({"error": "Mobile number is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         try:
+#             super_admin = UserRegisterModel.objects.get(mobile_number=mobile_number)
+#         except UserRegisterModel.DoesNotExist:
+#             return Response({"error": "Invalid mobile number"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         def generate_tokens(user):
+#             refresh = RefreshToken()
+#             refresh['mobile_number'] = user.mobile_number
+#             refresh['user_type'] = user.role
+#             refresh['user_id'] = user.id
+
+#             access = refresh.access_token
+#             return {
+#                 'refresh': str(refresh),
+#                 'access': str(access)
+#             }
+
+
+#         # ✅ OTP Login
+#         if otp:
+#             otp_stored = cache.get(f"otp_{mobile_number}")
+#             if otp_stored and int(otp) == otp_stored:
+#                 cache.delete(f"otp_{mobile_number}")
+#                 tokens = generate_tokens(super_admin)
+#                 return Response({
+#                     "message": "Login successful via OTP",
+#                     "tokens": tokens
+#                 }, status=status.HTTP_200_OK)
+#             return Response({"error": "Invalid or expired OTP"}, status=status.HTTP_400_BAD_REQUEST)
+#         return Response({"error": "Either OTP or password is required"}, status=status.HTTP_400_BAD_REQUEST) 
 
 
     
