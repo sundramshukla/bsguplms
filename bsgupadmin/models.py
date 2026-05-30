@@ -212,3 +212,126 @@ class Certificate(models.Model):
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+
+#========Google Form Functionality==============#
+
+
+# =========================
+# FORM MODEL
+# =========================
+
+class DynamicForm(models.Model):
+
+    title = models.CharField(max_length=255)
+
+    description = models.TextField(blank=True, null=True)
+
+    created_by = models.ForeignKey(
+        'bsgupadmin.UserRegisterModel',
+        on_delete=models.CASCADE
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.title
+
+
+# =========================
+# FORM FIELD MODEL
+# =========================
+
+class DynamicField(models.Model):
+
+    FIELD_TYPES = (
+        ("text", "Text"),
+        ("textarea", "Textarea"),
+        ("number", "Number"),
+        ("email", "Email"),
+        ("date", "Date"),
+        ("select", "Select"),
+        ("radio", "Radio"),
+        ("checkbox", "Checkbox"),
+        ("file", "File"),
+    )
+
+    form = models.ForeignKey(
+        DynamicForm,
+        on_delete=models.CASCADE,
+        related_name="fields"
+    )
+
+    label = models.CharField(max_length=255)
+
+    field_type = models.CharField(
+        max_length=20,
+        choices=FIELD_TYPES
+    )
+
+    required = models.BooleanField(default=False)
+
+    options = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    order = models.IntegerField(default=0)
+
+    def __str__(self):
+        return self.label
+
+
+# =========================
+# FORM RESPONSE
+# =========================
+
+class FormResponse(models.Model):
+
+    form = models.ForeignKey(
+        DynamicForm,
+        on_delete=models.CASCADE
+    )
+
+    submitted_by = models.ForeignKey(
+        'bsgupadmin.UserRegisterModel',
+        on_delete=models.CASCADE
+    )
+
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.form.title} - {self.submitted_by.id}"
+
+
+# =========================
+# RESPONSE ANSWERS
+# =========================
+
+class FormAnswer(models.Model):
+
+    response = models.ForeignKey(
+        FormResponse,
+        on_delete=models.CASCADE,
+        related_name="answers"
+    )
+
+    field = models.ForeignKey(
+        DynamicField,
+        on_delete=models.CASCADE
+    )
+
+    answer_text = models.TextField(
+        blank=True,
+        null=True
+    )
+
+    uploaded_file = models.FileField(
+        upload_to="form_uploads/",
+        blank=True,
+        null=True
+    )

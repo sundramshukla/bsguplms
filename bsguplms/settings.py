@@ -133,11 +133,13 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 CORS_ALLOWED_ORIGINS = [
     "https://bsguplms.in",
+    "https://www.bsguplms.in",
     "http://localhost:5173"
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://bsguplms.in",
+    "https://www.bsguplms.in",
     "http://localhost:5173"
 ]
 

@@ -7,12 +7,13 @@ from rest_framework.response import Response
 from user.models import Enrollment
 
 from .serializer import CourseCreateSerializer, CourseLessonSerializer, ProfileSerializer
-from .models import CourseLesson, CourseModel, ProfileDetails, UserRegisterModel,Quiz,Question,QuizAttempt,QuizResult,Certificate
+from .models import CourseLesson, CourseModel, DynamicField, DynamicForm, FormAnswer, FormResponse, ProfileDetails, UserRegisterModel,Quiz,Question,QuizAttempt,QuizResult,Certificate
 from django.core.cache import cache
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import EmailMessage
 from django.conf import settings
 from django.utils import timezone
+from rest_framework.parsers import (MultiPartParser,FormParser)
 
 from datetime import timedelta
 
@@ -1626,5 +1627,210 @@ class ToggleStudentStatusAPIView(APIView):
             {
                 "success": True,
                 "is_active_student": student.is_active_student
+            }
+        )
+    
+
+class CreateDynamicFormAPIView(APIView):
+
+    def post(self, request):
+
+        admin_id = request.data.get("admin_id")
+
+        title = request.data.get("title")
+
+        description = request.data.get("description")
+
+        fields = request.data.get("fields", [])
+
+        admin_exists = UserRegisterModel.objects.filter(
+            id=admin_id,
+            role__in=["admin", "superadmin"]
+        ).exists()
+
+        if not admin_exists:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Unauthorized"
+                },
+                status=403
+            )
+
+        form = DynamicForm.objects.create(
+            title=title,
+            description=description,
+            created_by_id=admin_id
+        )
+
+        for index, field in enumerate(fields):
+
+            DynamicField.objects.create(
+                form=form,
+                label=field.get("label"),
+                field_type=field.get("field_type"),
+                required=field.get("required", False),
+                options=",".join(
+                    field.get("options", [])
+                ),
+                order=index
+            )
+
+        return Response(
+            {
+                "success": True,
+                "form_id": form.id
+            }
+        )
+    
+
+
+
+class GetDynamicFormAPIView(APIView):
+
+    def get(self, request, form_id):
+
+        try:
+            form = DynamicForm.objects.get(
+                id=form_id,
+                is_active=True
+            )
+
+        except DynamicForm.DoesNotExist:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Form not found"
+                },
+                status=404
+            )
+
+        fields = DynamicField.objects.filter(
+            form=form
+        ).order_by("order")
+
+        data = []
+
+        for field in fields:
+
+            data.append({
+                "id": field.id,
+                "label": field.label,
+                "field_type": field.field_type,
+                "required": field.required,
+                "options": (
+                    field.options.split(",")
+                    if field.options else []
+                )
+            })
+
+        return Response(
+            {
+                "success": True,
+                "form": {
+                    "id": form.id,
+                    "title": form.title,
+                    "description": form.description,
+                    "fields": data
+                }
+            }
+        )
+    
+
+
+class SubmitDynamicFormAPIView(APIView):
+
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+
+        form_id = request.data.get("form_id")
+
+        user_id = request.data.get("user_id")
+
+        answers = json.loads(
+            request.data.get("answers", "[]")
+        )
+
+        response = FormResponse.objects.create(
+            form_id=form_id,
+            submitted_by_id=user_id
+        )
+
+        for item in answers:
+
+            field_id = item.get("field_id")
+
+            answer = item.get("answer")
+
+            FormAnswer.objects.create(
+                response=response,
+                field_id=field_id,
+                answer_text=answer
+            )
+
+        return Response(
+            {
+                "success": True,
+                "message": "Form submitted successfully"
+            }
+        )
+    
+
+
+class GetFormResponsesAPIView(APIView):
+
+    def get(self, request):
+
+        form_id = request.query_params.get("form_id")
+
+        if not form_id:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "form_id is required"
+                },
+                status=400
+            )
+
+        responses = (
+            FormResponse.objects
+            .filter(form_id=form_id)
+            .prefetch_related(
+                "answers__field"
+            )
+        )
+
+        data = []
+
+        for response in responses:
+
+            answers = []
+
+            for ans in response.answers.all():
+
+                answers.append({
+                    "question": ans.field.label,
+                    "answer": ans.answer_text,
+                    "file": (
+                        ans.uploaded_file.url
+                        if ans.uploaded_file
+                        else None
+                    )
+                })
+
+            data.append({
+                "student_id": response.submitted_by.id,
+                "submitted_at": response.submitted_at,
+                "answers": answers
+            })
+
+        return Response(
+            {
+                "success": True,
+                "data": data
             }
         )
