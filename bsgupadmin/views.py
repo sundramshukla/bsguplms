@@ -452,6 +452,165 @@ class LoginThroughEmailAPIView(APIView):
             },
             status=status.HTTP_200_OK
         )
+    
+
+
+
+
+class ForgotPasswordAPIView(APIView):
+
+    def get(self, request):
+
+        email = (
+            request.query_params
+            .get("email", "")
+            .strip()
+            .lower()
+        )
+
+        if not email:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "email is required"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not UserRegisterModel.objects.filter(
+            email=email
+        ).exists():
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Email not registered"
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        otp = generate_otp()
+
+        cache.set(
+            f"forgot_otp_{email}",
+            otp,
+            timeout=300
+        )
+
+        Thread(
+            target=send_otp_email,
+            kwargs={
+                "email": email,
+                "otp": otp,
+                "subject": "Password Reset OTP"
+            },
+            daemon=True
+        ).start()
+
+        return Response(
+            {
+                "success": True,
+                "message": "OTP sent successfully"
+            },
+            status=status.HTTP_200_OK
+        )
+
+    def post(self, request):
+
+        email = (
+            request.data
+            .get("email", "")
+            .strip()
+            .lower()
+        )
+
+        otp = request.data.get("otp")
+
+        new_password = request.data.get(
+            "new_password"
+        )
+
+        if (
+            not email or
+            not otp or
+            not new_password
+        ):
+
+            return Response(
+                {
+                    "success": False,
+                    "message": (
+                        "email, otp and "
+                        "new_password are required"
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        stored_otp = cache.get(
+            f"forgot_otp_{email}"
+        )
+
+        if not stored_otp:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "OTP expired"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if str(stored_otp) != str(otp):
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "Invalid OTP"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        updated_rows = (
+            UserRegisterModel.objects
+            .filter(email=email)
+            .update(
+                password=hash_password(
+                    new_password
+                )
+            )
+        )
+
+        if not updated_rows:
+
+            return Response(
+                {
+                    "success": False,
+                    "message": "User not found"
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        cache.delete(
+            f"forgot_otp_{email}"
+        )
+
+        return Response(
+            {
+                "success": True,
+                "message": (
+                    "Password reset successfully"
+                )
+            },
+            status=status.HTTP_200_OK
+        )
+
+
+
+
+
+
 
 # # Create your views here.
 # class RegisterApi(APIView):
