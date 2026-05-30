@@ -2219,6 +2219,12 @@ class ToggleStudentStatusAPIView(APIView):
         )
     
 
+
+
+
+
+#============google form functionality=======================================
+
 class CreateDynamicFormAPIView(APIView):
 
     def post(self, request):
@@ -2274,19 +2280,27 @@ class CreateDynamicFormAPIView(APIView):
     
 
 
-
 class GetDynamicFormAPIView(APIView):
-
-    def get(self, request, form_id):
-
+    
+    def get(self, request):
+        form_id = request.query_params.get("form_id")
+        
+        # form_id missing hai to error
+        if not form_id:
+            return Response(
+                {
+                    "success": False,
+                    "message": "form_id is required"
+                },
+                status=400
+            )
+        
         try:
             form = DynamicForm.objects.get(
                 id=form_id,
                 is_active=True
             )
-
         except DynamicForm.DoesNotExist:
-
             return Response(
                 {
                     "success": False,
@@ -2300,9 +2314,7 @@ class GetDynamicFormAPIView(APIView):
         ).order_by("order")
 
         data = []
-
         for field in fields:
-
             data.append({
                 "id": field.id,
                 "label": field.label,
@@ -2328,44 +2340,84 @@ class GetDynamicFormAPIView(APIView):
     
 
 
-class SubmitDynamicFormAPIView(APIView):
 
+
+class SubmitDynamicFormAPIView(APIView):
+    
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
+        try:
+            form_id = request.data.get("form_id")
+            user_id = request.data.get("user_id")
+            answers_str = request.data.get("answers", "[]")
 
-        form_id = request.data.get("form_id")
+            # Basic Validation
+            if not form_id or not user_id:
+                return Response({
+                    "success": False,
+                    "message": "form_id and user_id are required"
+                }, status=400)
 
-        user_id = request.data.get("user_id")
+            # Check Form Exists
+            try:
+                form = DynamicForm.objects.get(id=form_id, is_active=True)
+            except DynamicForm.DoesNotExist:
+                return Response({
+                    "success": False,
+                    "message": "Form not found or inactive"
+                }, status=404)
 
-        answers = json.loads(
-            request.data.get("answers", "[]")
-        )
+            # Parse Answers
+            try:
+                answers = json.loads(answers_str)
+            except json.JSONDecodeError:
+                return Response({
+                    "success": False,
+                    "message": "Invalid JSON in answers"
+                }, status=400)
 
-        response = FormResponse.objects.create(
-            form_id=form_id,
-            submitted_by_id=user_id
-        )
+            if not isinstance(answers, list):
+                return Response({
+                    "success": False,
+                    "message": "answers should be a list"
+                }, status=400)
 
-        for item in answers:
-
-            field_id = item.get("field_id")
-
-            answer = item.get("answer")
-
-            FormAnswer.objects.create(
-                response=response,
-                field_id=field_id,
-                answer_text=answer
+            # Create Form Response
+            form_response = FormResponse.objects.create(
+                form=form,
+                submitted_by_id=user_id
             )
 
-        return Response(
-            {
+            # === Bulk Create for Speed ===
+            form_answers = []
+            for item in answers:
+                field_id = item.get("field_id")
+                answer_text = item.get("answer")
+
+                if field_id:
+                    form_answers.append(FormAnswer(
+                        response=form_response,
+                        field_id=field_id,
+                        answer_text=answer_text if answer_text is not None else ""
+                    ))
+
+            # Bulk insert - Ye bahut fast hai
+            if form_answers:
+                FormAnswer.objects.bulk_create(form_answers)
+
+            return Response({
                 "success": True,
-                "message": "Form submitted successfully"
-            }
-        )
-    
+                "message": "Form submitted successfully",
+                "response_id": form_response.id
+            }, status=201)
+
+        except Exception as e:
+            return Response({
+                "success": False,
+                "message": "Internal server error",
+                "error": str(e)
+            }, status=500)    
 
 
 class GetFormResponsesAPIView(APIView):

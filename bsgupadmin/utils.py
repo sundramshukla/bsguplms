@@ -33,7 +33,7 @@ def verify_password(plain_password,hashed_password):
 def send_otp_email(email,otp,subject="OTP Verification"):
     send_mail(
         subject,
-        f"Welcome to BSGUPLMS Your Register OTP is {otp}",
+        f"Your OTP is {otp}",
         settings.EMAIL_HOST_USER,
         [email],
         fail_silently=False

@@ -18,5 +18,9 @@ urlpatterns = [
     path('dashboard/', AdminDashboardAPIView.as_view()),
     path('enrollment-by-department/', EnrollmentByDepartmentAPIView.as_view()),
     path('recentenrollment/',RecentEnrollmentsAPIView.as_view()),
-    path('student-status-cahnge/', ToggleStudentStatusAPIView.as_view())
-]
+    path('student-status-change/', ToggleStudentStatusAPIView.as_view()),
+    path('formcreate/', CreateDynamicFormAPIView.as_view(), name='form-create'),
+    path('formget/', GetDynamicFormAPIView.as_view(), name='form-get'),
+    path('formsubmit/', SubmitDynamicFormAPIView.as_view(), name='form-submit'),
+    path('formresponses/', GetFormResponsesAPIView.as_view(), name='form-responses'),
+]   
